@@ -18,7 +18,7 @@ class Encoder(nn.Module):   ## Embedding module
         super().__init__()
         self.encoder_channel = encoder_channel
         self.first_conv = nn.Sequential(
-            nn.Conv1d(3, 128, 1),
+            nn.Conv1d(4, 128, 1),
             nn.BatchNorm1d(128),
             nn.ReLU(inplace=True),
             nn.Conv1d(128, 256, 1)
@@ -32,12 +32,12 @@ class Encoder(nn.Module):   ## Embedding module
 
     def forward(self, point_groups):
         '''
-            point_groups : B G N 3
+            point_groups : B G N 4
             -----------------
             feature_global : B G C
         '''
         bs, g, n , _ = point_groups.shape
-        point_groups = point_groups.reshape(bs * g, n, 3)
+        point_groups = point_groups.reshape(bs * g, n, 4)
         # encoder
         feature = self.first_conv(point_groups.transpose(2,1))  # BG 256 n
         feature_global = torch.max(feature,dim=2,keepdim=True)[0]  # BG 256 1
@@ -53,30 +53,43 @@ class Group(nn.Module):  # FPS + KNN
         self.num_group = num_group
         self.group_size = group_size
         self.knn = KNN(k=self.group_size, transpose_mode=True)
-
-    def forward(self, xyz):
+    
+    def forward(self, xyzf):
         '''
-            input: B N 3
+            input: B N 4 (3 coordinates + 1 feature)
             ---------------------------
-            output: B G M 3
+            output: B G M 4
             center : B G 3
         '''
-        batch_size, num_points, _ = xyz.shape
-        # fps the centers out
-        center = misc.fps(xyz, self.num_group) # B G 3
-        # knn to get the neighborhood
-        _, idx = self.knn(xyz, center) # B G M
+        batch_size, num_points, _ = xyzf.shape
+        coords = xyzf[:, :, :3].contiguous()  # Extract xyz coordinates
+        features = xyzf[:, :, 3:]  # Extract features
+
+        # FPS to get centers using coordinates only
+        center = misc.fps(coords, self.num_group)  # B G 3
+
+        # KNN to get neighborhood indices using coordinates only
+        _, idx = self.knn(coords, center)  # B G M
         assert idx.size(1) == self.num_group
         assert idx.size(2) == self.group_size
-        idx_base = torch.arange(0, batch_size, device=xyz.device).view(-1, 1, 1) * num_points
+
+        idx_base = torch.arange(0, batch_size, device=xyzf.device).view(-1, 1, 1) * num_points
         idx = idx + idx_base
         idx = idx.view(-1)
-        neighborhood = xyz.view(batch_size * num_points, -1)[idx, :]
-        neighborhood = neighborhood.view(batch_size, self.num_group, self.group_size, 3).contiguous()
-        # normalize
-        neighborhood = neighborhood - center.unsqueeze(2)
-        return neighborhood, center
 
+        # Gather neighborhood points including features
+        neighborhood = xyzf.view(batch_size * num_points, -1)[idx, :]
+        neighborhood = neighborhood.view(batch_size, self.num_group, self.group_size, -1).contiguous()
+
+        # Normalize coordinates by subtracting the center
+        neighborhood_coords = neighborhood[:, :, :, :3]  # B G M 3
+        neighborhood_coords = neighborhood_coords - center.unsqueeze(2)  # B G M 3
+
+        # Combine normalized coordinates with features
+        neighborhood_features = neighborhood[:, :, :, 3:]  # B G M 1 (or more if multiple features)
+        neighborhood = torch.cat([neighborhood_coords, neighborhood_features], dim=-1)  # B G M 4
+
+        return neighborhood, center
 
 ## Transformers
 class Mlp(nn.Module):
@@ -301,6 +314,9 @@ class MaskTransformer(nn.Module):
         return overall_mask.to(center.device) # B G
 
     def forward(self, neighborhood, center, noaug = False):
+        # neighborhood: B, G, M, 4
+        # center: B, G, 3
+
         # generate mask
         if self.mask_type == 'rand':
             bool_masked_pos = self._mask_center_rand(center, noaug = noaug) # B G
@@ -316,6 +332,9 @@ class MaskTransformer(nn.Module):
         # mask pos center
         masked_center = center[~bool_masked_pos].reshape(batch_size, -1, 3)
         pos = self.pos_embed(masked_center)
+        # B, G, 3 --> B, G, 4 with zeros
+        zeros = torch.zeros((pos.size(0), pos.size(1), 1), device=pos.device)
+        pos = torch.cat([pos, zeros], dim=-1)
 
         # transformer
         x_vis = self.blocks(x_vis, pos)
@@ -379,7 +398,10 @@ class Point_MAE(nn.Module):
 
 
     def forward(self, pts, vis = False, **kwargs):
+        # pts: B, N, 4
         neighborhood, center = self.group_divider(pts)
+        # neighborhood: B, G, M, 4
+        # center: B, G, 3
 
         x_vis, mask = self.MAE_encoder(neighborhood, center)
         B,_,C = x_vis.shape # B VIS C

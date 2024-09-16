@@ -16,13 +16,14 @@ from pointnet2_ops import pointnet2_utils
 
 train_transforms = transforms.Compose(
     [
+        data_transforms.PointcloudRotateAndTranslate(),
         # data_transforms.PointcloudScale(),
         # data_transforms.PointcloudRotate(),
         # data_transforms.PointcloudRotatePerturbation(),
         # data_transforms.PointcloudTranslate(),
         # data_transforms.PointcloudJitter(),
         # data_transforms.PointcloudRandomInputDropout(),
-        data_transforms.PointcloudScaleAndTranslate(),
+        # data_transforms.PointcloudScaleAndTranslate(),
     ]
 )
 
@@ -111,7 +112,7 @@ def run_net(args, config, train_writer=None, val_writer=None):
 
         base_model.train()  # set model to training mode
         n_batches = len(train_dataloader)
-        for idx, (taxonomy_ids, model_ids, data) in enumerate(train_dataloader):
+        for idx, (data) in enumerate(train_dataloader):
             num_iter += 1
             n_itr = epoch * n_batches + idx
             
@@ -123,6 +124,8 @@ def run_net(args, config, train_writer=None, val_writer=None):
             elif dataset_name == 'ModelNet':
                 points = data[0].cuda()
                 points = misc.fps(points, npoints)   
+            elif dataset_name == 'LArNet':
+                points = data.cuda()
             else:
                 raise NotImplementedError(f'Train phase do not support {dataset_name}')
 

@@ -1,0 +1,3 @@
+NAME: LArNet
+LMDB_DIR: /home/youngsam/research/data/DataAccessExamples/larnet
+N_POINTS: 4096

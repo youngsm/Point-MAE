@@ -74,6 +74,28 @@ class PointcloudTranslate(object):
             
         return pc
 
+class PointcloudRotateAndTranslate(object):
+    def __init__(self, translate_range=0.2):
+        self.translate_range = translate_range
+
+    def __call__(self, pc):
+        bsize = pc.size()[0]
+        for i in range(bsize):
+            # Rotate
+            rotation_angle = np.random.uniform() * 2 * np.pi
+            cosval = np.cos(rotation_angle)
+            sinval = np.sin(rotation_angle)
+            rotation_matrix = np.array([[cosval, 0, sinval],
+                                        [0, 1, 0],
+                                        [-sinval, 0, cosval]])
+            R = torch.from_numpy(rotation_matrix.astype(np.float32)).to(pc.device)
+            pc[i, :, 0:3] = torch.matmul(pc[i, :, 0:3], R)
+            
+            # Translate
+            xyz2 = np.random.uniform(low=-self.translate_range, high=self.translate_range, size=[3])
+            pc[i, :, 0:3] = pc[i, :, 0:3] + torch.from_numpy(xyz2).float().cuda()
+            
+        return pc
 
 class PointcloudRandomInputDropout(object):
     def __init__(self, max_dropout_ratio=0.5):

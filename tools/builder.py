@@ -14,6 +14,9 @@ from timm.scheduler import CosineLRScheduler
 def dataset_builder(args, config):
     dataset = build_dataset_from_cfg(config._base_, config.others)
     shuffle = config.others.subset == 'train'
+    worker_init_fn = dataset.init_worker_fn if hasattr(dataset, 'init_worker_fn') else worker_init_fn
+    if hasattr(dataset, 'init_worker_fn'):
+        print_log('Using dataset worker init function')
     if args.distributed:
         sampler = torch.utils.data.distributed.DistributedSampler(dataset, shuffle = shuffle)
         dataloader = torch.utils.data.DataLoader(dataset, batch_size = config.others.bs,

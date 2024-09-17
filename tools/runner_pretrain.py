@@ -112,6 +112,7 @@ def run_net(args, config, train_writer=None, val_writer=None):
 
         base_model.train()  # set model to training mode
         n_batches = len(train_dataloader)
+        print_log("Start training", logger=logger)
         for idx, (data) in enumerate(train_dataloader):
             num_iter += 1
             n_itr = epoch * n_batches + idx
@@ -124,7 +125,7 @@ def run_net(args, config, train_writer=None, val_writer=None):
             elif dataset_name == 'ModelNet':
                 points = data[0].cuda()
                 points = misc.fps(points, npoints)   
-            elif dataset_name == 'LArNet':
+            elif dataset_name == 'LArNet' or dataset_name == 'LArNetH5':
                 points = data.cuda()
             else:
                 raise NotImplementedError(f'Train phase do not support {dataset_name}')

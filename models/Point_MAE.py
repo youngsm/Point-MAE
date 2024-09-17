@@ -332,9 +332,6 @@ class MaskTransformer(nn.Module):
         # mask pos center
         masked_center = center[~bool_masked_pos].reshape(batch_size, -1, 3)
         pos = self.pos_embed(masked_center)
-        # B, G, 3 --> B, G, 4 with zeros
-        zeros = torch.zeros((pos.size(0), pos.size(1), 1), device=pos.device)
-        pos = torch.cat([pos, zeros], dim=-1)
 
         # transformer
         x_vis = self.blocks(x_vis, pos)
@@ -418,9 +415,9 @@ class Point_MAE(nn.Module):
         x_rec = self.MAE_decoder(x_full, pos_full, N)
 
         B, M, C = x_rec.shape
-        rebuild_points = self.increase_dim(x_rec.transpose(1, 2)).transpose(1, 2).reshape(B * M, -1, 3)  # B M 1024
+        rebuild_points = self.increase_dim(x_rec.transpose(1, 2)).transpose(1, 2).reshape(B * M, -1, 4)  # B M 1024
 
-        gt_points = neighborhood[mask].reshape(B*M,-1,3)
+        gt_points = neighborhood[mask].reshape(B*M,-1,4)
         loss1 = self.loss_func(rebuild_points, gt_points)
 
         if vis: #visualization
